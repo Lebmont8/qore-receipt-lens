@@ -1,0 +1,26 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {analyse,hashInput,fields,base64} from '../app/lens.mjs';import {fixture,f} from './helpers.mjs';
+test('synthetic bytes never become cryptographic/contest evidence',async()=>{const r=await analyse(await fixture());assert.equal(r.hybrid_structure,'present');assert.equal(r.cryptographic_verification,'not performed');assert.match(r.origin,/synthetic/);assert.equal(r.qualified_contest_submission,false);});
+test('failed committed tx not labelled successful',async()=>assert.equal((await analyse(await fixture({code:13}))).execution,'failed'));
+for(const [name,opts,want]of [['absent',{absent:true},'absent'],['wrong algorithm',{algorithm:7},'malformed'],['short signature',{signatureLength:4626},'malformed'],['short key',{keyLength:2591},'malformed'],['noncritical',{noncritical:true},'malformed'],['duplicate',{duplicate:true},'malformed']])
+ test(name,async()=>assert.equal((await analyse(await fixture(opts))).hybrid_structure,want));
+for(const network of ['qorechain-vladi','qorechain-devnet',''])test('reject network '+network,async()=>assert.rejects(()=>fixture({network}).then(b=>analyse(b)),/Diana/));
+test('hash substitution',async()=>{const b=await fixture();await assert.rejects(()=>analyse(b,'F'.repeat(64)),/requested/);});
+test('raw bytes tampering',async()=>{const b=await fixture();b.receipt.result.tx='AAAA';await assert.rejects(()=>analyse(b),/SHA-256/);});
+test('RPC error is not receipt',async()=>{const b=await fixture();b.receipt={error:{code:-1}};await assert.rejects(()=>analyse(b),/did not return/);});
+test('unknown sync state',async()=>{const b=await fixture();delete b.network.result.sync_info.catching_up;await assert.rejects(()=>analyse(b),/sync state/);});
+test('catching up',async()=>{const b=await fixture();b.network.result.sync_info.catching_up=true;await assert.rejects(()=>analyse(b),/catching up/);});
+for(const h of ['0','-1','1.5','9999'])test('inconsistent height '+h,async()=>{const b=await fixture();b.receipt.result.height=h;await assert.rejects(()=>analyse(b),/height/);});
+test('code absent',async()=>{const b=await fixture();delete b.receipt.result.tx_result.code;await assert.rejects(()=>analyse(b),/result code/);});
+test('import origin never silently becomes official',async()=>{const b=await fixture();delete b.synthetic;b.origin='rpc';assert.match((await analyse(b)).origin,/not authenticated/);});
+test('memo kept verbatim, never executed',async()=>{const memo='<img src=x onerror=alert(1)>';assert.equal((await analyse(await fixture({memo}))).memo,memo);});
+test('hash normalization and bad path injection',()=>{assert.equal(hashInput('0x'+'a'.repeat(64)),'A'.repeat(64));for(const h of ['../status','A'.repeat(63),'g'.repeat(64),'A'.repeat(64)+'?',''])assert.throws(()=>hashInput(h));});
+test('malformed base64 rejected',()=>{for(const x of ['a===','@@==','AAA','A A=','abcde==='])assert.throws(()=>base64(x));});
+test('protobuf field zero',()=>assert.throws(()=>fields(Uint8Array.of(0,0)),/field/));
+test('protobuf truncated varint',()=>assert.throws(()=>fields(Uint8Array.of(128)),/Truncated/));
+test('protobuf length overflow',()=>assert.throws(()=>fields(Uint8Array.of(10,99,0)),/Truncated/));
+test('protobuf unsupported groups',()=>assert.throws(()=>fields(Uint8Array.of(11)),/wire/));
+test('protobuf fixed-width truncation',()=>assert.throws(()=>fields(Uint8Array.of(9,1)),/Truncated/));
+test('protobuf bounded number of fields',()=>assert.throws(()=>fields(new Uint8Array(new Array(4100).fill([8,1]).flat())),/Too many/));
+test('protobuf unsafe integer',()=>assert.throws(()=>fields(Uint8Array.from([8,255,255,255,255,255,255,255,255,127])),/range/));
+test('protobuf oversized buffer',()=>assert.throws(()=>fields(new Uint8Array(1048577)),/buffer/));

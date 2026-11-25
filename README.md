@@ -1,5 +1,5 @@
 # Qore Receipt Lens
-A read-only Diana testnet transaction inspector. It separates execution status, raw-byte SHA-256 identity and structural ML-DSA-87 extension evidence from actual cryptographic signature verification.
+Inspect a Diana testnet receipt for execution status, a SHA-256 fingerprint of the raw bytes, and ML-DSA-87 signature fields. The tool checks structure; it does not verify the signatures or prove that the transaction was included in consensus.
 
 ## Run
 Node.js 22+; no packages are required.
